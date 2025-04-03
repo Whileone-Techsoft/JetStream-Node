@@ -19,8 +19,11 @@
 ## Output
 
 1. The results are printed in the console for each test like this.
+
 ![img.png](./Public/assets/score-screenshot.png)
+
 2. Final result will be printed at the end.
+
 ![img.png](./Public/assets/final-result-screenshot.png)
 
 
