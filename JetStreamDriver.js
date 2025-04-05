@@ -44,8 +44,8 @@ if (typeof dumpJSONResults === "undefined")
     var dumpJSONResults = false;
 
 if (isNode) {
-    import fs from "node:fs/promises";
-    globalThis.readFile = fs.readFile;
+    const fsModule = await import("node:fs/promises");
+    globalThis.readFile = fsModule.readFile;
     globalThis.isInBrowser = false;
     globalThis.isD8 = false;
     globalThis.isNode = true;
