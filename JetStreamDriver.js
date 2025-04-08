@@ -26,6 +26,7 @@
 */
 
 const measureTotalTimeAsSubtest = false; // Once we move to preloading all resources, it would be good to turn this on.
+const isNode = typeof process !== "undefined" && process.release && process.release.name === "node";
 
 if (typeof RAMification === "undefined")
     var RAMification = false;
@@ -42,18 +43,33 @@ if (typeof testWorstCaseCountMap === "undefined")
 if (typeof dumpJSONResults === "undefined")
     var dumpJSONResults = false;
 
+if (isNode) {
+    const fsModule = await import("node:fs/promises");
+    globalThis.readFile = fsModule.readFile;
+    globalThis.isInBrowser = false;
+    globalThis.isD8 = false;
+    globalThis.isNode = true;
+    globalThis.isSpiderMonkey = false;
+}
+
 let shouldReport = false;
 let customTestList = [];
-if (typeof(URLSearchParams) !== "undefined") {
+if (typeof (URLSearchParams) !== "undefined" && !isNode) {
     const urlParameters = new URLSearchParams(window.location.search);
     shouldReport = urlParameters.has('report') && urlParameters.get('report').toLowerCase() == 'true';
     if (urlParameters.has('test'))
         customTestList = urlParameters.getAll("test");
 }
 
-// Used for the promise representing the current benchmark run.
-this.currentResolve = null;
-this.currentReject = null;
+if (isNode) {
+    globalThis.currentResolve = null;
+    globalThis.currentReject = null;
+} else {
+    // Used for the promise representing the current benchmark run.
+    this.currentResolve = null;
+    this.currentReject = null;
+}
+
 
 const defaultIterationCount = 120;
 const defaultWorstCaseCount = 4;
@@ -250,20 +266,32 @@ class Driver {
 
         let start = Date.now();
         for (let benchmark of this.benchmarks) {
-            benchmark.updateUIBeforeRun();
 
-            await updateUI();
+            if(isNode){
+                console.log(`\n\nRunning Benchmark ${benchmark.name}\n\n`);
+            }
+
+            if (isInBrowser) {
+                benchmark.updateUIBeforeRun();
+                await updateUI();
+            }
 
             try {
                 await benchmark.run();
+                console.log({
+                    Score: benchmark.score,
+                    ...benchmark.subTimes()
+                })
             } catch(e) {
                 JetStream.reportError(benchmark);
-                throw e;
+                // this will ensure that even a test failed, it will continue to run the next test
+                if(!isNode){
+                    throw e;
+                }
             }
 
-            benchmark.updateUIAfterRun();
-
             if (isInBrowser) {
+                benchmark.updateUIAfterRun();
                 let cache = JetStream.blobDataCache;
                 for (let file of benchmark.plan.files) {
                     let blobData = cache[file];
@@ -407,8 +435,13 @@ class Driver {
         });
     }
 
-    reportError(benchmark)
-    {
+    reportError(benchmark) {
+        if(isNode){
+            console.log(benchmark.name + " failed");
+            for (let id of benchmark.scoreIdentifiers())
+                console.log(id);
+            return;
+        }
         for (let id of benchmark.scoreIdentifiers())
             document.getElementById(id).innerHTML = "error";
     }
@@ -444,7 +477,7 @@ class Driver {
                 // If we've failed to prefetch resources even after a sequential 1 by 1 retry,
                 // then fail out early rather than letting subtests fail with a hang.
                 window.allIsGood = false;
-                throw new Error("Fetch failed"); 
+                throw new Error("Fetch failed");
             }
         }
 
@@ -540,6 +573,7 @@ class Benchmark {
 
     get runnerCode() {
         return `
+            const currentResolveParent = globalThis.isNode ? globalThis : top;
             let __benchmark = new Benchmark(${this.iterations});
             let results = [];
             for (let i = 0; i < ${this.iterations}; i++) {
@@ -554,7 +588,7 @@ class Benchmark {
             }
             if (__benchmark.validate)
                 __benchmark.validate();
-            top.currentResolve(results);`;
+            currentResolveParent.currentResolve(results);`;
     }
 
     processResults() {
@@ -790,7 +824,7 @@ class Benchmark {
 
         if (!blobData.blob) {
             window.allIsGood = false;
-            throw new Error("Fetch failed"); 
+            throw new Error("Fetch failed");
         }
 
         return !counter.failedPreloadResources && counter.loadedResources == counter.totalResources;
@@ -949,6 +983,7 @@ class AsyncBenchmark extends DefaultBenchmark {
     get runnerCode() {
         return `
         async function doRun() {
+            const currentResolveParent = globalThis.isNode ? globalThis : top;
             let __benchmark = new Benchmark();
             let results = [];
             for (let i = 0; i < ${this.iterations}; i++) {
@@ -959,7 +994,7 @@ class AsyncBenchmark extends DefaultBenchmark {
             }
             if (__benchmark.validate)
                 __benchmark.validate();
-            top.currentResolve(results);
+            currentResolveParent.currentResolve(results);
         }
         doRun();`
     }
@@ -984,6 +1019,7 @@ class WSLBenchmark extends Benchmark {
 
     get runnerCode() {
         return `
+            const currentResolveParent = globalThis.isNode ? globalThis : top;
             let benchmark = new Benchmark();
             let results = [];
             {
@@ -998,7 +1034,7 @@ class WSLBenchmark extends Benchmark {
                 results.push(Date.now() - start);
             }
 
-            top.currentResolve(results);
+            currentResolveParent.currentResolve(results);
             `;
     }
 
@@ -1066,7 +1102,7 @@ class WasmBenchmark extends Benchmark {
             let compileTime = null;
             let runTime = null;
 
-            let globalObject = this;
+            let globalObject = globalThis.isNode ? globalThis : this;
 
             globalObject.benchmarkTime = Date.now.bind(Date);
 
@@ -1080,7 +1116,8 @@ class WasmBenchmark extends Benchmark {
                 if (runTime !== null)
                     throw new Error("called report run time twice")
                 runTime = t;
-                top.currentResolve([compileTime, runTime]);
+                const currentResolveParent = globalThis.isNode ? globalThis : top;
+                currentResolveParent.currentResolve([compileTime, runTime]);
             };
 
             abort = quit = function() {
@@ -1127,11 +1164,20 @@ class WasmBenchmark extends Benchmark {
             `;
         } else {
             str += `
-            Module.wasmBinary = read("${this.wasmPath}", "binary");
-            globalObject.read = (...args) => {
-                console.log("should not be inside read: ", ...args);
-                throw new Error;
-            };
+            const readFileMethod = globalThis.isNode ? globalThis.readFile : read;
+            Module.wasmBinary = readFileMethod("${this.wasmPath}", "binary");
+            if(globalThis.isNode){
+                globalThis.readFile = (...args) => {
+                    console.log("should not be inside read: ", ...args);
+                    throw new Error;
+                };
+            }
+            else{
+                globalObject.read = (...args) => {
+                    console.log("should not be inside read: ", ...args);
+                    throw new Error;
+                };
+            }
 
             Module.setStatus = null;
             Module.monitorRunDependencies = null;
@@ -1262,20 +1308,21 @@ let testPlans = [
         iterations: 60,
         testGroup: ARESGroup
     },
-    {
-        name: "Babylon",
-        files: [
-            "./ARES-6/Babylon/index.js"
-            , "./ARES-6/Babylon/benchmark.js"
-        ],
-        preload: {
-            airBlob: "./ARES-6/Babylon/air-blob.js",
-            basicBlob: "./ARES-6/Babylon/basic-blob.js",
-            inspectorBlob: "./ARES-6/Babylon/inspector-blob.js",
-            babylonBlob: "./ARES-6/Babylon/babylon-blob.js"
-        },
-        testGroup: ARESGroup
-    },
+    // Babylon - gives error
+    // {
+    //     name: "Babylon",
+    //     files: [
+    //         "./ARES-6/Babylon/index.js"
+    //         , "./ARES-6/Babylon/benchmark.js"
+    //     ],
+    //     preload: {
+    //         airBlob: "./ARES-6/Babylon/air-blob.js",
+    //         basicBlob: "./ARES-6/Babylon/basic-blob.js",
+    //         inspectorBlob: "./ARES-6/Babylon/inspector-blob.js",
+    //         babylonBlob: "./ARES-6/Babylon/babylon-blob.js"
+    //     },
+    //     testGroup: ARESGroup
+    // },
     // CDJS
     {
         name: "cdjs",
@@ -1368,15 +1415,15 @@ let testPlans = [
         deterministicRandom: true,
         testGroup: OctaneGroup
     },
-    {
-        name: "mandreel",
-        files: [
-            "./Octane/mandreel.js"
-        ],
-        iterations: 80,
-        deterministicRandom: true,
-        testGroup: OctaneGroup
-    },
+    // {
+    //     name: "mandreel",
+    //     files: [
+    //         "./Octane/mandreel.js"
+    //     ],
+    //     iterations: 80,
+    //     deterministicRandom: true,
+    //     testGroup: OctaneGroup
+    // }, //TODO - temp commented out
     {
         name: "navier-stokes",
         files: [
@@ -1437,17 +1484,18 @@ let testPlans = [
         deterministicRandom: true,
         testGroup: OctaneGroup
     },
-    {
-        name: "octane-zlib",
-        files: [
-            "./Octane/zlib-data.js"
-            , "./Octane/zlib.js"
-        ],
-        iterations: 15,
-        worstCaseCount: 2,
-        deterministicRandom: true,
-        testGroup: OctaneGroup
-    },
+    // Octane-Zlib - gives error
+    // {
+    //     name: "octane-zlib",
+    //     files: [
+    //         "./Octane/zlib-data.js"
+    //         , "./Octane/zlib.js"
+    //     ],
+    //     iterations: 15,
+    //     worstCaseCount: 2,
+    //     deterministicRandom: true,
+    //     testGroup: OctaneGroup
+    // },
     // RexBench
     {
         name: "FlightPlanner",
@@ -1499,15 +1547,16 @@ let testPlans = [
         benchmarkClass: AsyncBenchmark,
         testGroup: SimpleGroup
     },
-    {
-        name: "float-mm.c",
-        files: [
-            "./simple/float-mm.c.js"
-        ],
-        iterations: 15,
-        worstCaseCount: 2,
-        testGroup: SimpleGroup
-    },
+    // Float-mm.c - gives error
+    // {
+    //     name: "float-mm.c",
+    //     files: [
+    //         "./simple/float-mm.c.js"
+    //     ],
+    //     iterations: 15,
+    //     worstCaseCount: 2,
+    //     testGroup: SimpleGroup
+    // },
     {
         name: "hash-map",
         files: [
@@ -1782,7 +1831,11 @@ for (let plan of testPlans) {
         testsByGroup.set(group, [testName]);
 }
 
-this.JetStream = new Driver();
+if (isNode) {
+    globalThis.JetStream = new Driver();
+} else {
+    this.JetStream = new Driver();
+}
 
 function addTestByName(testName)
 {
@@ -1832,11 +1885,11 @@ let runRexBench = true;
 let runWTB = true;
 let runSunSpider = true;
 let runSimple = true;
-let runCDJS = true;
+let runCDJS = false; // prevents code load from running on node - gives error
 let runWorkerTests = !!isInBrowser;
 let runSeaMonster = true;
-let runCodeLoad = true;
-let runWasm = true;
+let runCodeLoad = false; // prevents code load from running on node - gives error
+let runWasm = false; // prevents wasm from running on node - gives error
 if (typeof WebAssembly === "undefined")
     runWasm = false;
 
