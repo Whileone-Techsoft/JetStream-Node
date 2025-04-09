@@ -1415,15 +1415,15 @@ let testPlans = [
         deterministicRandom: true,
         testGroup: OctaneGroup
     },
-    // {
-    //     name: "mandreel",
-    //     files: [
-    //         "./Octane/mandreel.js"
-    //     ],
-    //     iterations: 80,
-    //     deterministicRandom: true,
-    //     testGroup: OctaneGroup
-    // }, //TODO - temp commented out
+    {
+        name: "mandreel",
+        files: [
+            "./Octane/mandreel.js"
+        ],
+        iterations: 80,
+        deterministicRandom: true,
+        testGroup: OctaneGroup
+    },
     {
         name: "navier-stokes",
         files: [
