@@ -1,5 +1,4 @@
 import vm from "node:vm";
-import * as readline from 'node:readline/promises';
 import {stdin as input, stdout as output} from 'node:process';
 
 import "./JetStreamDriver.js";
@@ -32,44 +31,22 @@ JetStream.runCode = function (scripts) {
     return globalObject;
 }
 
-const OPTIONS = [
-    "Run all tests",
-    "Run a single test",
-    "Exit"
-];
-
-const rl = readline.createInterface({ input, output });
-
-async function showMainMenu() {
-    console.log("\nMain Menu:");
-    OPTIONS.forEach((option, index) => {
-        console.log(`${index + 1}. ${option}`);
-    });
-
-    const answer = await rl.question("\nChoose one option: ");
-    return answer.trim();
-}
-
 async function runAllBenchmarks() {
     console.log("Total Benchmarks:", JetStream.benchmarks.length);
     await JetStream.initialize();
     await JetStream.start();
 }
 
-async function runSelectedBenchmark() {
+async function runSelectedBenchmark(benchmarkNumber) {
     const benchmarkOptions = JetStream.benchmarks;
-
-    console.log("\nAvailable Benchmarks:");
-    benchmarkOptions.forEach((benchmark, index) => {
-        console.log(`${index + 1}. ${benchmark.name}`);
-    });
-
-    const testName = await rl.question("\nEnter test number: ");
-    const selectedIndex = parseInt(testName.trim()) - 1;
+    const selectedIndex = benchmarkNumber - 1;
 
     if (selectedIndex < 0 || selectedIndex >= benchmarkOptions.length) {
-        console.log("Invalid test number");
-        return;
+        console.log("Invalid benchmark number. Available benchmarks:");
+        benchmarkOptions.forEach((benchmark, index) => {
+            console.log(`${index + 1}. ${benchmark.name}`);
+        });
+        process.exit(1);
     }
 
     JetStream.benchmarks = [benchmarkOptions[selectedIndex]];
@@ -77,27 +54,41 @@ async function runSelectedBenchmark() {
     await JetStream.start();
 }
 
+async function showUsage() {
+    console.log("\nUsage:");
+    console.log("  npm run jetstream-node all            # Run all benchmarks");
+    console.log("  npm run jetstream-node <number>       # Run a specific benchmark");
+    console.log("\nAvailable benchmarks:");
+    JetStream.benchmarks.forEach((benchmark, index) => {
+        console.log(`  ${index + 1}. ${benchmark.name}`);
+    });
+    process.exit(1);
+}
+
 async function runJetStream() {
     try {
-        const choice = await showMainMenu();
+        const args = process.argv.slice(2);
+        
+        if (args.length !== 1) {
+            await showUsage();
+            return;
+        }
 
-        switch (choice) {
-            case "1":
-                await runAllBenchmarks();
-                break;
-            case "2":
-                await runSelectedBenchmark();
-                break;
-            case "3":
-                console.log("Exiting...");
-                break;
-            default:
-                console.log("Invalid option");
+        const command = args[0].toLowerCase();
+
+        if (command === 'all') {
+            await runAllBenchmarks();
+        } else {
+            const benchmarkNumber = parseInt(command);
+            if (isNaN(benchmarkNumber)) {
+                await showUsage();
+                return;
+            }
+            await runSelectedBenchmark(benchmarkNumber);
         }
     } catch (err) {
         console.error("An error occurred:", err);
-    } finally {
-        rl.close();
+        process.exit(1);
     }
 }
 
