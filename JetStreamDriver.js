@@ -146,7 +146,7 @@ function mean(values) {
     return sum / values.length;
 }
 
-function geomean(values) {
+export function geomean(values) {
     assert(values instanceof Array);
     let product = 1;
     for (let x of values)
