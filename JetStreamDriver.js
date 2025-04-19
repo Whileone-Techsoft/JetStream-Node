@@ -146,7 +146,7 @@ function mean(values) {
     return sum / values.length;
 }
 
-function geomean(values) {
+export function geomean(values) {
     assert(values instanceof Array);
     let product = 1;
     for (let x of values)
@@ -268,7 +268,7 @@ class Driver {
         for (let benchmark of this.benchmarks) {
 
             if(isNode){
-                console.log(`\n\nRunning Benchmark ${benchmark.name}\n\n`);
+                console.log(`\nRunning Benchmark ${benchmark.name}`);
             }
 
             if (isInBrowser) {
@@ -336,11 +336,20 @@ class Driver {
                 displayCategoryScores();
             statusElement.innerHTML = '';
         } else {
-            console.log("\n");
-            for (let [category, scores] of categoryScores)
-                console.log(`${category}: ${uiFriendlyNumber(geomean(scores))}`);
+            // Only show aggregate information if there are multiple benchmarks
+            if (this.benchmarks.length > 1) {
+                console.log("\nScores per benchmark:");
+                const maxNameLength = Math.max(...this.benchmarks.map(b => b.name.length));
+                for (const benchmark of this.benchmarks) {
+                    console.log(`${benchmark.name.padEnd(maxNameLength)}: ${uiFriendlyNumber(benchmark.score)}`);
+                }
+    
+                console.log("\nScores per category:");
+                for (let [category, scores] of categoryScores)
+                    console.log(`${category}: ${uiFriendlyNumber(geomean(scores))}`);
 
-            console.log("\nTotal Score: ", uiFriendlyNumber(geomean(allScores)), "\n");
+                console.log("\nTotal Score: ", uiFriendlyNumber(geomean(allScores)));
+            }
         }
 
         this.reportScoreToRunBenchmarkRunner();
