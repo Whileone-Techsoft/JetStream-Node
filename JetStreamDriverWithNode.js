@@ -39,18 +39,18 @@ async function runAllBenchmarks() {
     await JetStream.start();
 }
 
-async function runSelectedBenchmarks(benchmarkNumbers) {
+async function runSelectedBenchmarks(benchmarkNames) {
     const benchmarkOptions = JetStream.benchmarks;
     const selectedBenchmarks = [];
 
-    for (const num of benchmarkNumbers) {
-        const selectedIndex = num - 1;
-        if (selectedIndex < 0 || selectedIndex >= benchmarkOptions.length) {
-            console.log(`Invalid benchmark number: ${num}`);
+    for (const name of benchmarkNames) {
+        const benchmark = benchmarkOptions.find(b => b.name === name);
+        if (!benchmark) {
+            console.log(`Invalid benchmark name: ${name}`);
             await showUsage();
             return;
         }
-        selectedBenchmarks.push(benchmarkOptions[selectedIndex]);
+        selectedBenchmarks.push(benchmark);
     }
 
     JetStream.benchmarks = selectedBenchmarks;
@@ -61,7 +61,7 @@ async function runSelectedBenchmarks(benchmarkNumbers) {
 async function showUsage() {
     console.log("\nUsage:");
     console.log("  npm run jetstream-node all [--output=filename.json]    # Run all benchmarks");
-    console.log("  npm run jetstream-node <number> [number2 ...] [--output=filename.json]  # Run specific benchmarks");
+    console.log("  npm run jetstream-node <name> [name2 ...] [--output=filename.json]  # Run specific benchmarks by name");
     console.log("\nAvailable benchmarks:");
     JetStream.benchmarks.forEach((benchmark, index) => {
         console.log(`  ${index + 1}. ${benchmark.name}`);
@@ -110,13 +110,9 @@ async function runJetStream() {
         if (command === 'all') {
             await runAllBenchmarks();
         } else {
-            // Parse all arguments as benchmark numbers
-            const benchmarkNumbers = args.map(arg => parseInt(arg));
-            if (benchmarkNumbers.some(isNaN)) {
-                await showUsage();
-                return;
-            }
-            await runSelectedBenchmarks(benchmarkNumbers);
+            // Parse all arguments as benchmark names
+            const benchmarkNames = args;
+            await runSelectedBenchmarks(benchmarkNames);
         }
 
         // Save results to JSON file
