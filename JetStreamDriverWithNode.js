@@ -33,35 +33,37 @@ JetStream.runCode = function (scripts) {
     return globalObject;
 }
 
-async function runAllBenchmarks() {
+async function runAllBenchmarks(excludeNames = []) {
+    JetStream.benchmarks = JetStream.benchmarks.filter(b => !excludeNames.includes(b.name));
     console.log("Total Benchmarks:", JetStream.benchmarks.length);
     await JetStream.initialize();
     await JetStream.start();
 }
 
-async function runSelectedBenchmarks(benchmarkNumbers) {
+async function runSelectedBenchmarks(benchmarkNames, excludeNames = []) {
     const benchmarkOptions = JetStream.benchmarks;
     const selectedBenchmarks = [];
 
-    for (const num of benchmarkNumbers) {
-        const selectedIndex = num - 1;
-        if (selectedIndex < 0 || selectedIndex >= benchmarkOptions.length) {
-            console.log(`Invalid benchmark number: ${num}`);
+    for (const name of benchmarkNames) {
+        const benchmark = benchmarkOptions.find(b => b.name === name);
+        if (!benchmark) {
+            console.log(`Invalid benchmark name: ${name}`);
             await showUsage();
             return;
         }
-        selectedBenchmarks.push(benchmarkOptions[selectedIndex]);
+        selectedBenchmarks.push(benchmark);
     }
 
-    JetStream.benchmarks = selectedBenchmarks;
+    // Filter out excluded benchmarks
+    JetStream.benchmarks = selectedBenchmarks.filter(b => !excludeNames.includes(b.name));
     await JetStream.initialize();
     await JetStream.start();
 }
 
 async function showUsage() {
     console.log("\nUsage:");
-    console.log("  npm run jetstream-node all [--output=filename.json]    # Run all benchmarks");
-    console.log("  npm run jetstream-node <number> [number2 ...] [--output=filename.json]  # Run specific benchmarks");
+    console.log("  npm run jetstream-node -- all [--output=filename.json] [--exclude=name1,name2]    # Run all benchmarks except excluded ones");
+    console.log("  npm run jetstream-node -- <name> [name2 ...] [--output=filename.json] [--exclude=name1,name2]  # Run specific benchmarks by name");
     console.log("\nAvailable benchmarks:");
     JetStream.benchmarks.forEach((benchmark, index) => {
         console.log(`  ${index + 1}. ${benchmark.name}`);
@@ -92,12 +94,19 @@ async function runJetStream() {
     try {
         const args = process.argv.slice(2);
         let outputFile = 'bench_result.json';
+        let excludeNames = [];
         
-        // Parse output file argument if present
+        // Parse output file and exclude arguments if present
         const outputArgIndex = args.findIndex(arg => arg.startsWith('--output='));
         if (outputArgIndex !== -1) {
             outputFile = args[outputArgIndex].split('=')[1];
             args.splice(outputArgIndex, 1);
+        }
+
+        const excludeArgIndex = args.findIndex(arg => arg.startsWith('--exclude='));
+        if (excludeArgIndex !== -1) {
+            excludeNames = args[excludeArgIndex].split('=')[1].split(',');
+            args.splice(excludeArgIndex, 1);
         }
         
         if (args.length === 0) {
@@ -108,15 +117,11 @@ async function runJetStream() {
         const command = args[0].toLowerCase();
 
         if (command === 'all') {
-            await runAllBenchmarks();
+            await runAllBenchmarks(excludeNames);
         } else {
-            // Parse all arguments as benchmark numbers
-            const benchmarkNumbers = args.map(arg => parseInt(arg));
-            if (benchmarkNumbers.some(isNaN)) {
-                await showUsage();
-                return;
-            }
-            await runSelectedBenchmarks(benchmarkNumbers);
+            // Parse all arguments as benchmark names
+            const benchmarkNames = args;
+            await runSelectedBenchmarks(benchmarkNames, excludeNames);
         }
 
         // Save results to JSON file
