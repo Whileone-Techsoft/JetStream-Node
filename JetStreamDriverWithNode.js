@@ -33,14 +33,17 @@ JetStream.runCode = function (scripts) {
     return globalObject;
 }
 
-async function runAllBenchmarks(excludeNames = []) {
+async function runAllBenchmarks(excludeNames = [], forceIterations = null) {
     JetStream.benchmarks = JetStream.benchmarks.filter(b => !excludeNames.includes(b.name));
+    if (forceIterations !== null) {
+        JetStream.benchmarks.forEach(b => b.iterations = forceIterations);
+    }
     console.log("Total Benchmarks:", JetStream.benchmarks.length);
     await JetStream.initialize();
     await JetStream.start();
 }
 
-async function runSelectedBenchmarks(benchmarkNames, excludeNames = []) {
+async function runSelectedBenchmarks(benchmarkNames, excludeNames = [], forceIterations = null) {
     const benchmarkOptions = JetStream.benchmarks;
     const selectedBenchmarks = [];
 
@@ -56,14 +59,17 @@ async function runSelectedBenchmarks(benchmarkNames, excludeNames = []) {
 
     // Filter out excluded benchmarks
     JetStream.benchmarks = selectedBenchmarks.filter(b => !excludeNames.includes(b.name));
+    if (forceIterations !== null) {
+        JetStream.benchmarks.forEach(b => b.iterations = forceIterations);
+    }
     await JetStream.initialize();
     await JetStream.start();
 }
 
 async function showUsage() {
     console.log("\nUsage:");
-    console.log("  npm run jetstream-node -- all [--output=filename.json] [--exclude=name1,name2]    # Run all benchmarks except excluded ones");
-    console.log("  npm run jetstream-node -- <name> [name2 ...] [--output=filename.json] [--exclude=name1,name2]  # Run specific benchmarks by name");
+    console.log("  npm run jetstream-node -- all [--output=filename.json] [--exclude=name1,name2] [--iterations=N]    # Run all benchmarks except excluded ones");
+    console.log("  npm run jetstream-node -- <name> [name2 ...] [--output=filename.json] [--exclude=name1,name2] [--iterations=N]  # Run specific benchmarks by name");
     console.log("\nAvailable benchmarks:");
     JetStream.benchmarks.forEach((benchmark, index) => {
         console.log(`  ${index + 1}. ${benchmark.name}`);
@@ -95,8 +101,9 @@ async function runJetStream() {
         const args = process.argv.slice(2);
         let outputFile = 'bench_result.json';
         let excludeNames = [];
+        let forceIterations = null;
         
-        // Parse output file and exclude arguments if present
+        // Parse output file, exclude arguments, and iterations if present
         const outputArgIndex = args.findIndex(arg => arg.startsWith('--output='));
         if (outputArgIndex !== -1) {
             outputFile = args[outputArgIndex].split('=')[1];
@@ -108,6 +115,16 @@ async function runJetStream() {
             excludeNames = args[excludeArgIndex].split('=')[1].split(',');
             args.splice(excludeArgIndex, 1);
         }
+
+        const iterationsArgIndex = args.findIndex(arg => arg.startsWith('--iterations='));
+        if (iterationsArgIndex !== -1) {
+            forceIterations = parseInt(args[iterationsArgIndex].split('=')[1]);
+            if (isNaN(forceIterations) || forceIterations <= 0) {
+                console.error("Error: --iterations must be a positive number");
+                process.exit(1);
+            }
+            args.splice(iterationsArgIndex, 1);
+        }
         
         if (args.length === 0) {
             await showUsage();
@@ -117,11 +134,11 @@ async function runJetStream() {
         const command = args[0].toLowerCase();
 
         if (command === 'all') {
-            await runAllBenchmarks(excludeNames);
+            await runAllBenchmarks(excludeNames, forceIterations);
         } else {
             // Parse all arguments as benchmark names
             const benchmarkNames = args;
-            await runSelectedBenchmarks(benchmarkNames, excludeNames);
+            await runSelectedBenchmarks(benchmarkNames, excludeNames, forceIterations);
         }
 
         // Save results to JSON file
